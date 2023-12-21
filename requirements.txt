@@ -6,7 +6,6 @@ opencv-python
 simple-parsing
 scikit-image==0.19
 matplotlib
-catkin-tools
 # cupy
 
 ###### Requirements with Version Specifiers ######`
