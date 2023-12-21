@@ -1,35 +1,25 @@
 cmake_minimum_required(VERSION 3.10)
 project(convex_plane_decomposition_msgs)
 
-set(CATKIN_PACKAGE_DEPENDENCIES
-  std_msgs
-  geometry_msgs
-  grid_map_msgs
-)
 
-find_package(catkin REQUIRED
-  COMPONENTS
-    ${CATKIN_PACKAGE_DEPENDENCIES}
-    message_generation
-)
+find_package(ament_cmake REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 
-add_message_files(
-  FILES
-    BoundingBox2d.msg
-    PlanarRegion.msg
-    PlanarTerrain.msg
-    Point2d.msg
-    Polygon2d.msg
-    PolygonWithHoles2d.msg
-)
+find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(grid_map_msgs REQUIRED)
 
-generate_messages(
-  DEPENDENCIES
-    ${CATKIN_PACKAGE_DEPENDENCIES}
-)
 
-catkin_package(
-  CATKIN_DEPENDS
-    ${CATKIN_PACKAGE_DEPENDENCIES}
-    message_runtime
-)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/BoundingBox2d.msg"
+  "msg/PlanarRegion.msg"
+  "msg/PlanarTerrain.msg"
+  "msg/Point2d.msg"
+  "msg/Polygon2d.msg"
+  "msg/PolygonWithHoles2d.msg"
+  DEPENDENCIES std_msgs geometry_msgs grid_map_msgs
+ )
+
+
+ament_package()
