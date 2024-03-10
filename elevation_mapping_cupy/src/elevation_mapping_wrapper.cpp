@@ -12,7 +12,8 @@
 #include <pcl/common/projection_matrix.h>
 
 // ROS
-#include <ros/package.h>
+// #include <ros/package.h>
+#include <rclcpp/rclcpp.hpp>
 
 #include <utility>
 
@@ -159,7 +160,7 @@ void ElevationMappingWrapper::setParameters(ros::NodeHandle& nh) {
     }
     ROS_INFO_STREAM("image_channel_fusion_dict: " << image_channel_fusion_dict);
     param_.attr("image_channel_fusions") = image_channel_fusion_dict;
-  }
+  } 
 
   param_.attr("update")();
   resolution_ = py::cast<float>(param_.attr("get_value")("resolution"));
