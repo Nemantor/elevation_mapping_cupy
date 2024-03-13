@@ -15,12 +15,13 @@
 
 namespace elevation_mapping_cupy {
 
-ElevationMappingWrapper::ElevationMappingWrapper() {}
+  ElevationMappingWrapper::ElevationMappingWrapper() {}
+
 
 
 // this function creates the handles with the python library
 void ElevationMappingWrapper::initialize(rclcpp::Node::SharedPtr nh) {
-
+    RCLCPP_INFO(nh->get_logger(), "Initializing Elevation Mapping Wrapper");
     auto threading = py::module::import("threading");
     py::gil_scoped_acquire acquire;
 
@@ -34,7 +35,9 @@ void ElevationMappingWrapper::initialize(rclcpp::Node::SharedPtr nh) {
     auto parameter = py::module::import("elevation_mapping_cupy.parameter");
     param_ = parameter.attr("Parameter")();
     setParameters(nh);
-    map_ = elevation_mapping.attr("ElevationMapping")(param_);
+    map_ = elevation_mapping.attr("ElevationMap")(param_);
+    RCLCPP_INFO(nh->get_logger(), "Elevation Mapping Wrapper initialized");
+
 }
 
 // this function sets the parameters for the elevation mapping in python
@@ -46,6 +49,7 @@ void ElevationMappingWrapper::setParameters(rclcpp::Node::SharedPtr nh) {
     for(int i = 0; i < paramNames.size(); i++) {
         std::string type = py::cast<std::string>(paramTypes[i]);
         std::string name = py::cast<std::string>(paramNames[i]);
+        RCLCPP_INFO_STREAM(nh->get_logger(), "Parameter name: " << name << " type: " << type);
         if (type == "float") {
             float param;
             if (nh->get_parameter(name, param)) {
@@ -101,7 +105,6 @@ void ElevationMappingWrapper::setParameters(rclcpp::Node::SharedPtr nh) {
     // no idea what these are for we wil see
     enable_normal_color_ = false;
     enable_normal_ = false;      
-
 
 }
 

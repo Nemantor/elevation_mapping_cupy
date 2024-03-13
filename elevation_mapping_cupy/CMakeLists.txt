@@ -1,6 +1,9 @@
 # %Tag(FULLTEXT)%
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.9)
 project(elevation_mapping_cupy)
+
+# compile options for pybind11
+
 
 
 find_package(ament_cmake REQUIRED)
@@ -10,6 +13,9 @@ find_package(OpenCV REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(tf2 REQUIRED)
+find_package(tf2_eigen REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
@@ -42,14 +48,17 @@ include_directories(
   ${OpenCV_INCLUDE_DIRS}
 )
 
-add_library(elevation_mapping_ros
-    src/elevation_mapping_wrapper.cpp
-    src/elevation_mapping_ros.cpp)
+add_library(elevation_mapping_ros2
+    src/elevation_mapping_wrapper_ros2.cpp
+    src/elevation_mapping_ros2.cpp)
 
-ament_target_dependencies(elevation_mapping_ros
+ament_target_dependencies(elevation_mapping_ros2
   "rclcpp"
   "rclpy"
   "tf2"
+  "tf2_eigen"
+  "tf2_geometry_msgs"
+  "tf2_ros"
   "sensor_msgs"
   "std_msgs"
   "geometry_msgs"
@@ -64,22 +73,32 @@ ament_target_dependencies(elevation_mapping_ros
   "std_srvs"
 )
 
-target_link_libraries(elevation_mapping_ros ${PYTHON_LIBRARIES} ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
+target_link_libraries(elevation_mapping_ros2 ${PYTHON_LIBRARIES} ${OpenCV_LIBRARIES})
 
-# add_executable(elevation_mapping_node src/elevation_mapping_node.cpp)
-# target_link_libraries(elevation_mapping_node elevation_mapping_ros)
+add_executable(elevation_mapping_node_ros2 src/elevation_mapping_node_ros2.cpp)
+target_link_libraries(elevation_mapping_node_ros2 elevation_mapping_ros2)
+ament_target_dependencies(elevation_mapping_node_ros2 "rclcpp")
 
+# add_compile_options(-fvisibility=hidden)
+# target_compile_definitions(elevation_mapping_ros2 PRIVATE -fvisibility=hidden)
+
+# ament_python_install_package(elevation_mapping_cupy)
 
 install(
-  TARGETS elevation_mapping_ros
+  TARGETS elevation_mapping_ros2
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
 
 install(
-  DIRECTORY launch config
+  TARGETS elevation_mapping_node_ros2
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(
+  DIRECTORY launch config script
   DESTINATION share/${PROJECT_NAME}
 )
 
-  ament_package()
+ament_package()

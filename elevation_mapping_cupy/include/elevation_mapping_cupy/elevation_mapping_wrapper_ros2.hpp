@@ -43,12 +43,11 @@ class ElevationMappingWrapper {
 
   ElevationMappingWrapper();
 
+
   void initialize(rclcpp::Node::SharedPtr nh);
 
   void input(const RowMatrixXd& points, const std::vector<std::string>& channels, const RowMatrixXd& R, const Eigen::VectorXd& t,
              const double positionNoise, const double orientationNoise);
-  void input_image(const std::vector<ColMatrixXf>& multichannel_image, const std::vector<std::string>& channels, const RowMatrixXd& R,
-                   const Eigen::VectorXd& t, const RowMatrixXd& cameraMatrix, int height, int width);
   void move_to(const Eigen::VectorXd& p, const RowMatrixXd& R);
   void clear();
   void update_variance();
@@ -61,6 +60,7 @@ class ElevationMappingWrapper {
   double get_additive_mean_error();
   void initializeWithPoints(std::vector<Eigen::Vector3d>& points, std::string method);
   void addNormalColorLayer(grid_map::GridMap& map);
+  void publishMapToOdom(double error);
 
  private:
   void setParameters(rclcpp::Node::SharedPtr nh);

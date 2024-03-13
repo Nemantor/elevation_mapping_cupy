@@ -17,8 +17,8 @@
 
 // ROS
 #include <geometry_msgs/msg/polygon_stamped.h>
-#include <image_transport/image_transport.h>
-#include <image_transport/subscriber_filter.h>
+#include <image_transport/image_transport.hpp>
+#include <image_transport/subscriber_filter.hpp>
 #include <message_filters/subscriber.h>
 #include <message_filters/sync_policies/approximate_time.h>
 #include <message_filters/synchronizer.h>
@@ -30,6 +30,9 @@
 #include <std_srvs/srv/set_bool.hpp>
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_eigen/tf2_eigen.hpp>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 
@@ -72,13 +75,15 @@ class ElevationMappingNode : public rclcpp::Node{
   using PointCloudSync = message_filters::Synchronizer<PointCloudPolicy>;
   using PointCloudSyncPtr = std::shared_ptr<PointCloudSync>;
 
+
+  
+
  private:
   void readParameters();
   void setupMapPublishers();
-  void pointcloudCallback(const sensor_msgs::msg::PointCloud2& cloud, const std::string& key);
-  void inputPointCloud(const sensor_msgs::msg::PointCloud2& cloud, const std::vector<std::string>& channels);
+  void pointcloudCallback(const sensor_msgs::msg::PointCloud2& cloud);
+  void inputPointCloud(const sensor_msgs::msg::PointCloud2& cloud, std::vector<std::string>& channels);
 
-  void pointCloudChannelCallback(const sensor_msgs::msg::PointCloud2& cloud, const elevation_map_msgs::msg::ChannelInfoConstPtr& channel_info_msg);
 
   void publishAsPointCloud(const grid_map::GridMap& map) const;
   bool getSubmap(grid_map_msgs::srv::GetGridMap::Request& request, grid_map_msgs::srv::GetGridMap::Response& response);
@@ -99,27 +104,12 @@ class ElevationMappingNode : public rclcpp::Node{
 
   visualization_msgs::msg::Marker vectorToArrowMarker(const Eigen::Vector3d& start, const Eigen::Vector3d& end, const int id) const;
 
-  std::vector<rclcpp::Subscription<sensor_msgs::msg::PointCloud2>> pointcloudSubs_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloudSub_;
+
   std::vector<PointCloudSyncPtr> pointCloudSyncs_;
   std::vector<rclcpp::Publisher<grid_map_msgs::msg::GridMap>> mapPubs_;
-  tf2_ros::TransformBroadcaster tf2Broadcaster_;
-//   ros::Publisher alivePub_;
-//   ros::Publisher pointPub_;
-//   ros::Publisher normalPub_;
-//   ros::Publisher statisticsPub_;
-//   ros::ServiceServer rawSubmapService_;
-//   ros::ServiceServer clearMapService_;
-//   ros::ServiceServer clearMapWithInitializerService_;
-//   ros::ServiceServer initializeMapService_;
-//   ros::ServiceServer setPublishPointService_;
-//   ros::ServiceServer checkSafetyService_;
-//   ros::Timer updateVarianceTimer_;
-//   ros::Timer updateTimeTimer_;
-//   ros::Timer updatePoseTimer_;
-//   ros::Timer updateGridMapTimer_;
-//   ros::Timer publishStatisticsTimer_;
-//   ros::Time lastStatisticsPublishedTime_;
-  tf2_ros::TransformListener transformListener_;
+  std::shared_ptr<tf2_ros::TransformListener> transformListener_;
+  std::unique_ptr<tf2_ros::Buffer> tfBuffer_;
   ElevationMappingWrapper map_;
   std::string mapFrameId_;
   std::string correctedMapFrameId_;
@@ -133,7 +123,6 @@ class ElevationMappingNode : public rclcpp::Node{
   std::set<std::string> map_layers_sync_;
   std::vector<double> map_fps_;
   std::set<double> map_fps_unique_;
-//   std::vector<rclcpp::Timer> mapTimers_;
   std::map<std::string, std::vector<std::string>> channels_;
 
   std::vector<std::string> initialize_frame_id_;
@@ -154,7 +143,7 @@ class ElevationMappingNode : public rclcpp::Node{
   double positionAlpha_;
   double orientationAlpha_;
 
-  double recordableFps_;
+
   std::atomic_bool enablePointCloudPublishing_;
   bool enableNormalArrowPublishing_;
   bool enableDriftCorrectedTFPublishing_;

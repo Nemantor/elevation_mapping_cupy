@@ -13,6 +13,8 @@ find_package(std_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ChannelInfo.msg"
   "msg/Statistics.msg"
+  "srv/CheckSafety.srv"
+  "srv/Initialize.srv"
   DEPENDENCIES std_msgs geometry_msgs
  )
 

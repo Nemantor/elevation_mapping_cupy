@@ -14,11 +14,101 @@
 namespace elevation_mapping_cupy {
 
 
+ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
+    double recordableFps, updateVarianceFps, timeInterval, updatePoseFps, updateGridMapFps, publishStatisticsFps;
+
+    //declare parameters
+    declare_parameter("point_cloud_topic", "point_cloud");
+    declare_parameter("initialize_frame_id", "base");
+    declare_parameter("pose_topic", "pose");
+    declare_parameter("map_frame", "map");
+    declare_parameter("base_frame", "base");
+    declare_parameter("initialize_method", "cubic");
+    declare_parameter("position_lowpass_alpha", 0.2);
+    declare_parameter("orientation_lowpass_alpha", 0.2);
+    declare_parameter("update_variance_fps", 1.0);
+    declare_parameter("time_interval", 0.1);
+    declare_parameter("update_pose_fps", 10.0);
+    declare_parameter("initialize_tf_grid_size", 0.5);
+    declare_parameter("map_acquire_fps", 5.0);
+    declare_parameter("enable_point_cloud_publishing", false);
+    declare_parameter("enable_drift_corrected_tf_publishing", false);
+    declare_parameter("use_initializer_at_start", false);
 
 
-void ElevationMappingNode::inputPointCloud(const sensor_msgs::msg::PointCloud2& cloud,
-                                            const std::vector<std::string>& channels) {
+    RCLCPP_INFO(this->get_logger(), "ElevationMappingNode started.");
 
+    //first create a pose tf2_listener for the robot pose and the required buffer for it
+    tfBuffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+    transformListener_ = std::make_shared<tf2_ros::TransformListener>(*tfBuffer_);
+
+    //initilaize the variable can be used with default constructor but I don't trust myself enough
+    lowpassPosition_ = Eigen::Vector3d::Zero();
+    lowpassOrientation_ = Eigen::Vector4d(0, 0, 0, 1);
+    positionError_ = 0.0;
+    orientationError_ = 0.0;
+    positionAlpha_ = 0.1;
+    orientationAlpha_ = 0.1;
+    enablePointCloudPublishing_ = false;
+    isGridmapUpdated_ = false;
+
+    std::string map_fram;
+    std::string pose_topic;
+    std::string point_cloud_topic;
+
+
+
+    //get parameters
+
+
+    pose_topic = this->get_parameter("pose_topic").as_string();
+    mapFrameId_ = this->get_parameter("map_frame").as_string();
+    baseFrameId_ = this->get_parameter("base_frame").as_string();
+    initializeMethod_ = this->get_parameter("initialize_method").as_string();
+    positionAlpha_ = this->get_parameter("position_lowpass_alpha").as_double();
+    orientationAlpha_ = this->get_parameter("orientation_lowpass_alpha").as_double();
+    updateVarianceFps= this->get_parameter("update_variance_fps").as_double();
+    timeInterval = this->get_parameter("time_interval").as_double();
+    updatePoseFps = this->get_parameter("update_pose_fps").as_double();
+    initializeTfGridSize_ = this->get_parameter("initialize_tf_grid_size").as_double();
+    updateGridMapFps = this->get_parameter("map_acquire_fps").as_double();
+    enablePointCloudPublishing_ = this->get_parameter("enable_point_cloud_publishing").as_bool();
+    enableDriftCorrectedTFPublishing_ = this->get_parameter("enable_drift_corrected_tf_publishing").as_bool();
+    useInitializerAtStart_ = this->get_parameter("use_initializer_at_start").as_bool();
+    point_cloud_topic = this->get_parameter("point_cloud_topic").as_string();
+
+
+    //intialize the pointcloud subscriber
+    pointcloudSub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+        point_cloud_topic, 10, std::bind(&ElevationMappingNode::pointcloudCallback, this, std::placeholders::_1));
+
+    //intialize the cupy map wrapper
+    RCLCPP_INFO(this->get_logger(), "Initializing map.");
+    auto nh = std::make_shared<rclcpp::Node>("elevation_mapping_wrapper");
+    nh->declare_parameter("plugin_config_file", "/home/eongan/focus/cupy_ws/src/elevation_mapping_cupy/elevation_mapping_cupy/config/core/plugin_config.yaml");
+    nh->declare_parameter("weight_file", "/home/eongan/focus/cupy_ws/src/elevation_mapping_cupy/elevation_mapping_cupy/config/core/weights.dat");
+    map_.initialize(nh);
+
+
+
+
+
+    RCLCPP_INFO(this->get_logger(), "ElevationMappingNode finish initialization.");
+}
+
+
+void ElevationMappingNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2& cloud) {
+    auto fields = cloud.fields;
+    std::vector<std::string> channels;
+    for (const auto& field : fields) {
+        RCLCPP_INFO_STREAM(this->get_logger(), "Channel: " << field.name);
+        channels.push_back(field.name);
+    }
+    inputPointCloud(cloud, channels);
+}
+
+//this function inputs a pcl2 cloud to the elevation mapping in the sensor frame
+void ElevationMappingNode::inputPointCloud(const sensor_msgs::msg::PointCloud2& cloud, std::vector<std::string>& channels) {
     auto start = this->now();
     auto* pcl_pc = new pcl::PCLPointCloud2();
     pcl::PCLPointCloud2ConstPtr cloudPtr(pcl_pc);
@@ -40,15 +130,18 @@ void ElevationMappingNode::inputPointCloud(const sensor_msgs::msg::PointCloud2& 
     }
 
     // get pose of sensor in map frame
+    // the frame of the map will be referenced to the initualisation pose of fast_lio
+
     tf2::Transform transformTf;
     std::string sensorFrameId = cloud.header.frame_id;
     auto timeStamp = cloud.header.stamp;
     Eigen::Affine3d transformationSensorToMap;
 
     try {
-        // implement here the transorm between the lidar and the map
-        //
-        //
+        auto t = tfBuffer_->lookupTransform(mapFrameId_, sensorFrameId, timeStamp);
+        //convert tf2 to eigen
+        auto temp = tf2::transformToEigen(t);
+        transformationSensorToMap = temp.affine();
     } catch(tf2::TransformException &ex) {
         RCLCPP_ERROR(this->get_logger(), "Could not get transform from %s to %s: %s",
                      mapFrameId_.c_str(), sensorFrameId.c_str(), ex.what());
@@ -66,20 +159,202 @@ void ElevationMappingNode::inputPointCloud(const sensor_msgs::msg::PointCloud2& 
     map_.input(points, channels, transformationSensorToMap.rotation(), transformationSensorToMap.translation(),
                 positionError, orientationError);
 
-    if(enableDriftCorrectedTFPublishing_) {
-        publishMapToOdom(map_.get_additive_mean_error());
-    }
     RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(), *this->get_clock(), 100, "Input pointcloud took " << (this->now() - start).seconds() << " seconds.");
     RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(), *this->get_clock(), 100, "positionError: " << positionError << " orientationError: " << orientationError);
                                                 
 }
 
 
+//this function updates the base frame of the robot with the tf2 message
+void ElevationMappingNode::updatePose() {
+    geometry_msgs::msg::TransformStamped transformStamped;
+    const auto& timestamp = this->now();
+    Eigen::Affine3d transformationBaseToMap;
+    try {
+        transformStamped = tfBuffer_->lookupTransform(mapFrameId_, baseFrameId_, timestamp);
+        auto temp = tf2::transformToEigen(transformStamped);
+        transformationBaseToMap = temp.affine();        
+    } catch (tf2::TransformException &ex) {
+        RCLCPP_ERROR(this->get_logger(), "Could not get transform from %s to %s: %s",
+                     mapFrameId_.c_str(), baseFrameId_.c_str(), ex.what());
+        return;
+    }
+
+    //This is to check if the robot is moving, in the original code reference to origin have to be checked
+    Eigen::Vector3d position(transformStamped.transform.translation.x,
+                            transformStamped.transform.translation.y,
+                            transformStamped.transform.translation.z);
+
+    map_.move_to(position, transformationBaseToMap.rotation().transpose());
+    Eigen::Vector3d position3 = position;
+    Eigen::Vector4d orientation(transformStamped.transform.rotation.x,
+                                transformStamped.transform.rotation.y,
+                                transformStamped.transform.rotation.z,
+                                transformStamped.transform.rotation.w);
+    lowpassPosition_ = positionAlpha_ * position3 + (1.0 - positionAlpha_) * lowpassPosition_;
+    lowpassOrientation_ = orientationAlpha_ * orientation + (1.0 - orientationAlpha_) * lowpassOrientation_;
+    {
+        std::lock_guard<std::mutex> lock(errorMutex_);
+        positionError_ = (position3 - lowpassPosition_).norm();
+        orientationError_ = (orientation - lowpassOrientation_).norm();
+    }
+
+    if(useInitializerAtStart_) {
+        RCLCPP_INFO_STREAM(this->get_logger(), "clearing map with initializer");
+        initializeWithTF();
+        useInitializerAtStart_ = false;
+    }
+
+
+}
 
 
 
+void ElevationMappingNode::initializeWithTF() {
+    RCLCPP_INFO(this->get_logger(), "Initializing map with TF.");
+    std::vector<Eigen::Vector3d> points;
+    const auto& timestamp = this->now();
+    int i = 0;
+    Eigen::Vector3d p;
+    for (const auto& frame_id : initialize_frame_id_) {
+        Eigen::Affine3d transformationBaseToMap;
+        geometry_msgs::msg::TransformStamped transformStamped;
+        try {
+            transformStamped = tfBuffer_->lookupTransform(mapFrameId_, frame_id, timestamp);
+            auto temp = tf2::transformToEigen(transformStamped);
+            transformationBaseToMap = temp.affine();               
+        } catch (tf2::TransformException &ex) {
+            RCLCPP_ERROR(this->get_logger(), "Could not get transform from %s to %s: %s",
+                         mapFrameId_.c_str(), frame_id.c_str(), ex.what());
+            return;
+        }
+        p = transformationBaseToMap.translation();
+        p.z() += initialize_tf_offset_[i];
+        points.push_back(p);
+        i++;
+    }
+    if(!points.empty() && points.size() < 3) {
+        points.emplace_back(p + Eigen::Vector3d(initializeTfGridSize_, initializeTfGridSize_, 0));
+        points.emplace_back(p + Eigen::Vector3d(-initializeTfGridSize_, initializeTfGridSize_, 0));
+        points.emplace_back(p + Eigen::Vector3d(initializeTfGridSize_, -initializeTfGridSize_, 0));
+        points.emplace_back(p + Eigen::Vector3d(-initializeTfGridSize_, -initializeTfGridSize_, 0));
+    }
+    RCLCPP_INFO_STREAM(this->get_logger(), "Intializing with points using" << initializeMethod_);
+    map_.initializeWithPoints(points, initializeMethod_);
+}
 
+void ElevationMappingNode::publishAsPointCloud(const grid_map::GridMap& map) const {
+    sensor_msgs::msg::PointCloud2 msg;
+    grid_map::GridMapRosConverter::toPointCloud(map, "elevation", msg);
+    }
 
+bool ElevationMappingNode::getSubmap(grid_map_msgs::srv::GetGridMap::Request& request, grid_map_msgs::srv::GetGridMap::Response& response) {
+    std::string requestedFrameId = request.frame_id;
+    Eigen::Isometry3d transformationOdomToMap;
+    grid_map::Position requestedSubmapposition(request.position_x, request.position_y);
+
+    //hpefully we always will be making requests in the map frame
+    if(requestedFrameId != mapFrameId_) {
+        geometry_msgs::msg::TransformStamped transformStamped;
+        const auto& timestamp = this->now();
+        try {
+            transformStamped = tfBuffer_->lookupTransform(requestedFrameId, mapFrameId_, timestamp);
+            auto temp = tf2::transformToEigen(transformStamped);
+            transformationOdomToMap = temp.affine(); 
+
+        } catch (tf2::TransformException &ex) {
+            RCLCPP_ERROR(this->get_logger(), "Could not get transform from %s to %s: %s",
+                         mapFrameId_.c_str(), requestedFrameId.c_str(), ex.what());
+            return false;
+        }
+        Eigen::Vector3d p(request.position_x, request.position_y, 0);
+        Eigen::Vector3d mapP = transformationOdomToMap.inverse() * p;
+        requestedSubmapposition.x() = mapP.x();
+        requestedSubmapposition.y() = mapP.y();
+    }
+
+    grid_map::Length requestedSubmapLength(request.length_x, request.length_y);
+    RCLCPP_INFO_STREAM(this->get_logger(), "Requested submap at position " << requestedSubmapposition.transpose() << " with length " << requestedSubmapLength.transpose() << " in frame " << requestedFrameId << ".");
+    bool isSuccess = false;
+    grid_map::Index index;
+    grid_map::GridMap submap;
+    {
+        std::lock_guard<std::mutex> lock(mapMutex_);
+        //the new gridmap does not have indicies
+        submap = gridMap_.getSubmap(requestedSubmapposition, requestedSubmapLength, isSuccess);
+    }
+    const auto& length = submap.getLength();
+    if(requestedFrameId != mapFrameId_) {
+       submap = submap.getTransformedMap(transformationOdomToMap, "elevation",requestedFrameId);
+    }
+    if (request.layers.empty()) {
+        //it uses a newfangled allacator have to look closely for now not working
+        auto created_msg = grid_map::GridMapRosConverter::toMessage(submap);
+        response.map = *created_msg;
+    } else {
+        RCLCPP_INFO_STREAM(this->get_logger(), "NOT IMPLEMETED YOU ARE FUCKED Requested layers: ");
+        return false;
+    }
+    return isSuccess;
+}
+
+void ElevationMappingNode::updateGridMap() {
+    std::vector<std::string> layers(map_layers_all_.begin(), map_layers_all_.end());
+    std::lock_guard<std::mutex> lock(mapMutex_);
+    map_.get_grid_map(gridMap_, layers);
+    gridMap_.setTimestamp(this->now().nanoseconds());
+
+    if (enablePointCloudPublishing_) {
+        publishAsPointCloud(gridMap_);
+    }
+    isGridmapUpdated_ = true;
+}
+
+bool ElevationMappingNode::initializeMap(elevation_map_msgs::srv::Initialize::Request& request, elevation_map_msgs::srv::Initialize::Response& response) {
+    if (request.type == request.POINTS) {
+        std::vector<Eigen::Vector3d> points;
+        for(const auto& point : request.points) {
+            const auto& pointFrameId = point.header.frame_id;
+            const auto& timeStamp = point.header.stamp;
+            const auto& pvector = Eigen::Vector3d(point.point.x, point.point.y, point.point.z);
+            if(mapFrameId_ != pointFrameId) {
+                geometry_msgs::msg::TransformStamped transformStamped;
+                Eigen::Affine3d transformationBaseToMap;
+                try {
+                    transformStamped = tfBuffer_->lookupTransform(mapFrameId_, pointFrameId, timeStamp);
+                    auto temp = tf2::transformToEigen(transformStamped);
+                    transformationBaseToMap = temp.affine(); 
+                
+                } catch (tf2::TransformException &ex) {
+                    RCLCPP_ERROR(this->get_logger(), "Could not get transform from %s to %s: %s",
+                                 mapFrameId_.c_str(), pointFrameId.c_str(), ex.what());
+                    return false;
+                }
+                const auto transformed_p = transformationBaseToMap * pvector;
+                points.push_back(transformed_p);
+            } else {
+                points.push_back(pvector);
+            }
+
+        }
+        std::string method;
+        switch (request.method) {
+        case request.NEAREST:
+            method = "nearest";
+            break;
+        case request.LINEAR:
+            method = "linear";
+            break;
+        case request.CUBIC:
+            method = "cubic";
+            break;
+        }
+        RCLCPP_INFO_STREAM(this->get_logger(), "Intializing with points using" << method);
+        map_.initializeWithPoints(points, method);
+    }
+    response.success = true;
+    return true;
+}
 
 
 
