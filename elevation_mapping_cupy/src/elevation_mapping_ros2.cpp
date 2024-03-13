@@ -9,6 +9,8 @@
 #include <pcl/common/projection_matrix.h>
 
 #include <elevation_map_msgs/msg/statistics.hpp>
+#include <chrono>
+using namespace std::chrono_literals;
 
 
 namespace elevation_mapping_cupy {
@@ -18,11 +20,11 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
     double recordableFps, updateVarianceFps, timeInterval, updatePoseFps, updateGridMapFps, publishStatisticsFps;
 
     //declare parameters
-    declare_parameter("point_cloud_topic", "point_cloud");
+    declare_parameter("point_cloud_topic", "livox/pcl");
     declare_parameter("initialize_frame_id", "base");
     declare_parameter("pose_topic", "pose");
-    declare_parameter("map_frame", "map");
-    declare_parameter("base_frame", "base");
+    declare_parameter("map_frame", "camera_init");
+    declare_parameter("base_frame", "body");
     declare_parameter("initialize_method", "cubic");
     declare_parameter("position_lowpass_alpha", 0.2);
     declare_parameter("orientation_lowpass_alpha", 0.2);
@@ -31,7 +33,7 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
     declare_parameter("update_pose_fps", 10.0);
     declare_parameter("initialize_tf_grid_size", 0.5);
     declare_parameter("map_acquire_fps", 5.0);
-    declare_parameter("enable_point_cloud_publishing", false);
+    declare_parameter("enable_point_cloud_publishing", true);
     declare_parameter("enable_drift_corrected_tf_publishing", false);
     declare_parameter("use_initializer_at_start", false);
 
@@ -78,9 +80,6 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
     point_cloud_topic = this->get_parameter("point_cloud_topic").as_string();
 
 
-    //intialize the pointcloud subscriber
-    pointcloudSub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-        point_cloud_topic, 10, std::bind(&ElevationMappingNode::pointcloudCallback, this, std::placeholders::_1));
 
     //intialize the cupy map wrapper
     RCLCPP_INFO(this->get_logger(), "Initializing map.");
@@ -90,10 +89,69 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
     map_.initialize(nh);
 
 
+    //intialize the pointcloud subscriber
+    pointcloudSub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+    point_cloud_topic, 10, std::bind(&ElevationMappingNode::pointcloudCallback, this, std::placeholders::_1));
 
+    
+    publishers_ = std::make_pair(this->create_publisher<grid_map_msgs::msg::GridMap>("elevation_map_raw", 10), std::map<std::string, std::vector<std::string>>());
+    publishers_.second["layers"] = {"elevation"};
+    publishers_.second["basic_layers"] = {"elevation"};
+    
+    //initialize the layers and publishers
+    
+    map_layers_.push_back({"elevation"});
+    map_basic_layers_.push_back({"elevation"});
+
+    //create the map publishers timers
+    map_layers_all_.insert("elevation");
+
+
+
+    //Now we create the timers
+    updatePoseTimer_ = this->create_wall_timer(100ms, std::bind(&ElevationMappingNode::updatePose, this));
+    updateVarianceTimer_ = this->create_wall_timer(500ms, std::bind(&ElevationMappingNode::updateVariance, this));
+    updateGridMapTimer_ = this->create_wall_timer(500ms, std::bind(&ElevationMappingNode::updateGridMap, this));
+    updateTimeTimer_ = this->create_wall_timer(100ms, std::bind(&ElevationMappingNode::updateTime, this));
+
+    publishMapTimer_ = this->create_wall_timer(100ms, std::bind(&ElevationMappingNode::publishMapOfIndex, this));
 
 
     RCLCPP_INFO(this->get_logger(), "ElevationMappingNode finish initialization.");
+}
+
+
+void ElevationMappingNode::publishMapOfIndex() {
+    int index = 0;
+    if(!isGridmapUpdated_) {
+        RCLCPP_INFO_STREAM(this->get_logger(), "Gridmap not updated yet. not publishing");
+        return;
+    }
+    grid_map_msgs::msg::GridMap msg;
+    std::vector<std::string> layers;
+    {
+        std::lock_guard<std::mutex> lock(mapMutex_);
+        for (const auto& layer : map_layers_[index]) {
+            bool is_layer_in_all = map_layers_all_.find(layer) != map_layers_all_.end();
+            if (is_layer_in_all && gridMap_.exists(layer)) {
+                layers.push_back(layer);
+            } else if (map_.exists_layer(layer)){
+                RCLCPP_INFO_STREAM(this->get_logger(), "Layer " << layer << " does not exist in the grid map, but adding.");
+                ElevationMappingWrapper::RowMatrixXf map_data;
+                map_.get_layer_data(layer, map_data);
+                gridMap_.add(layer, map_data);
+                layers.push_back(layer);
+            }
+        }
+        if (layers.empty()) {
+            RCLCPP_INFO_STREAM(this->get_logger(), "No layers to publish.");
+            return;
+        }
+        msg = *grid_map::GridMapRosConverter::toMessage(gridMap_, layers);
+        msg.header.frame_id = mapFrameId_;
+    }
+    msg.basic_layers = map_basic_layers_[index];
+    publishers_.first->publish(msg);
 }
 
 
@@ -133,12 +191,12 @@ void ElevationMappingNode::inputPointCloud(const sensor_msgs::msg::PointCloud2& 
     // the frame of the map will be referenced to the initualisation pose of fast_lio
 
     tf2::Transform transformTf;
-    std::string sensorFrameId = cloud.header.frame_id;
+    std::string sensorFrameId = "body";
     auto timeStamp = cloud.header.stamp;
     Eigen::Affine3d transformationSensorToMap;
 
     try {
-        auto t = tfBuffer_->lookupTransform(mapFrameId_, sensorFrameId, timeStamp);
+        auto t = tfBuffer_->lookupTransform(mapFrameId_, sensorFrameId, tf2::TimePointZero);
         //convert tf2 to eigen
         auto temp = tf2::transformToEigen(t);
         transformationSensorToMap = temp.affine();
@@ -171,7 +229,7 @@ void ElevationMappingNode::updatePose() {
     const auto& timestamp = this->now();
     Eigen::Affine3d transformationBaseToMap;
     try {
-        transformStamped = tfBuffer_->lookupTransform(mapFrameId_, baseFrameId_, timestamp);
+        transformStamped = tfBuffer_->lookupTransform(mapFrameId_, baseFrameId_, tf2::TimePointZero);
         auto temp = tf2::transformToEigen(transformStamped);
         transformationBaseToMap = temp.affine();        
     } catch (tf2::TransformException &ex) {
@@ -245,6 +303,10 @@ void ElevationMappingNode::initializeWithTF() {
 
 void ElevationMappingNode::publishAsPointCloud(const grid_map::GridMap& map) const {
     sensor_msgs::msg::PointCloud2 msg;
+    for (const auto& layer : map.getLayers()) {
+        RCLCPP_INFO_STREAM(this->get_logger(), "Channels available: " << layer);
+
+    }
     grid_map::GridMapRosConverter::toPointCloud(map, "elevation", msg);
     }
 
@@ -307,6 +369,7 @@ void ElevationMappingNode::updateGridMap() {
     if (enablePointCloudPublishing_) {
         publishAsPointCloud(gridMap_);
     }
+    RCLCPP_INFO_STREAM(this->get_logger(), "Grifmap updated hopefully");
     isGridmapUpdated_ = true;
 }
 
@@ -357,5 +420,15 @@ bool ElevationMappingNode::initializeMap(elevation_map_msgs::srv::Initialize::Re
 }
 
 
+void ElevationMappingNode::updateVariance() {
+    map_.update_variance();
+    RCLCPP_INFO_STREAM(this->get_logger(), "Variance updated.");
+
+}
+
+void ElevationMappingNode::updateTime() {
+    map_.update_time();
+    RCLCPP_INFO_STREAM(this->get_logger(), "Time updated.");
+}
 
 }  // namespace elevation_mapping_cupy

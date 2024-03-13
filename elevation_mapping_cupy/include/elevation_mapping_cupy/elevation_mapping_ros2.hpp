@@ -100,11 +100,23 @@ class ElevationMappingNode : public rclcpp::Node{
   void initializeWithTF();
   void publishMapToOdom(double error);
   void publishStatistics();
-  void publishMapOfIndex(int index);
+  void publishMapOfIndex();
 
   visualization_msgs::msg::Marker vectorToArrowMarker(const Eigen::Vector3d& start, const Eigen::Vector3d& end, const int id) const;
 
+  // define the subscriber handles
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloudSub_;
+  // define the timer handles
+  rclcpp::TimerBase::SharedPtr updatePoseTimer_;
+  rclcpp::TimerBase::SharedPtr updateVarianceTimer_;
+  rclcpp::TimerBase::SharedPtr updateTimeTimer_;
+  rclcpp::TimerBase::SharedPtr updateGridMapTimer_;
+  rclcpp::TimerBase::SharedPtr publishMapTimer_;
+
+  // define the publishers construct
+  std::pair<rclcpp::Publisher<grid_map_msgs::msg::GridMap>::SharedPtr, std::map<std::string, std::vector<std::string>>> publishers_;
+  // define a simple publisher
+
 
   std::vector<PointCloudSyncPtr> pointCloudSyncs_;
   std::vector<rclcpp::Publisher<grid_map_msgs::msg::GridMap>> mapPubs_;
