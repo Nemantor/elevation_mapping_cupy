@@ -24,16 +24,16 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
     declare_parameter("initialize_frame_id", "base");
     declare_parameter("pose_topic", "pose");
     declare_parameter("map_frame", "camera_init");
-    declare_parameter("base_frame", "body");
-    declare_parameter("initialize_method", "cubic");
+    declare_parameter("base_frame", "livox_sensor");
+    declare_parameter("initialize_method", "linear");
     declare_parameter("position_lowpass_alpha", 0.2);
     declare_parameter("orientation_lowpass_alpha", 0.2);
-    declare_parameter("update_variance_fps", 1.0);
-    declare_parameter("time_interval", 0.1);
-    declare_parameter("update_pose_fps", 10.0);
+    declare_parameter("update_variance_fps", 10.0);
+    declare_parameter("time_interval", 0.02);
+    declare_parameter("update_pose_fps", 50.0);
     declare_parameter("initialize_tf_grid_size", 0.5);
-    declare_parameter("map_acquire_fps", 5.0);
-    declare_parameter("enable_point_cloud_publishing", true);
+    declare_parameter("map_acquire_fps", 10.0);
+    declare_parameter("enable_point_cloud_publishing", false);
     declare_parameter("enable_drift_corrected_tf_publishing", false);
     declare_parameter("use_initializer_at_start", false);
 
@@ -86,6 +86,10 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
     auto nh = std::make_shared<rclcpp::Node>("elevation_mapping_wrapper");
     nh->declare_parameter("plugin_config_file", "/home/eongan/focus/cupy_ws/src/elevation_mapping_cupy/elevation_mapping_cupy/config/core/plugin_config.yaml");
     nh->declare_parameter("weight_file", "/home/eongan/focus/cupy_ws/src/elevation_mapping_cupy/elevation_mapping_cupy/config/core/weights.dat");
+    nh->declare_parameter("max_height_range", static_cast<float>(1.0));
+    nh->declare_parameter("time_interval", static_cast<float>(0.02));
+    timeInterval = nh->get_parameter("time_interval").as_double();
+
     map_.initialize(nh);
 
 
@@ -107,14 +111,16 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
     map_layers_all_.insert("elevation");
 
 
-
     //Now we create the timers
-    updatePoseTimer_ = this->create_wall_timer(100ms, std::bind(&ElevationMappingNode::updatePose, this));
-    updateVarianceTimer_ = this->create_wall_timer(500ms, std::bind(&ElevationMappingNode::updateVariance, this));
-    updateGridMapTimer_ = this->create_wall_timer(500ms, std::bind(&ElevationMappingNode::updateGridMap, this));
-    updateTimeTimer_ = this->create_wall_timer(100ms, std::bind(&ElevationMappingNode::updateTime, this));
-
+    updatePoseTimer_ = this->create_wall_timer(std::chrono::milliseconds(uint(1 / (updatePoseFps + 0.0001) * 1000)), std::bind(&ElevationMappingNode::updatePose, this));
+    updateVarianceTimer_ = this->create_wall_timer(std::chrono::milliseconds(uint(1 / (updateVarianceFps + 0.0001) * 1000)), std::bind(&ElevationMappingNode::updateVariance, this));
+    updateGridMapTimer_ = this->create_wall_timer(std::chrono::milliseconds(uint(1 / (updateGridMapFps + 0.0001) * 1000)), std::bind(&ElevationMappingNode::updateGridMap, this));
+    updateTimeTimer_ = this->create_wall_timer(std::chrono::milliseconds(uint(timeInterval * 1000)), std::bind(&ElevationMappingNode::updateTime, this));
     publishMapTimer_ = this->create_wall_timer(100ms, std::bind(&ElevationMappingNode::publishMapOfIndex, this));
+
+    //Now we create the services can also implemented as a topic
+    //Only one service for now, for getting the submap around the robot
+    
 
 
     RCLCPP_INFO(this->get_logger(), "ElevationMappingNode finish initialization.");
@@ -159,7 +165,7 @@ void ElevationMappingNode::pointcloudCallback(const sensor_msgs::msg::PointCloud
     auto fields = cloud.fields;
     std::vector<std::string> channels;
     for (const auto& field : fields) {
-        RCLCPP_INFO_STREAM(this->get_logger(), "Channel: " << field.name);
+        // RCLCPP_INFO_STREAM(this->get_logger(), "Channel: " << field.name);
         channels.push_back(field.name);
     }
     inputPointCloud(cloud, channels);
@@ -191,7 +197,7 @@ void ElevationMappingNode::inputPointCloud(const sensor_msgs::msg::PointCloud2& 
     // the frame of the map will be referenced to the initualisation pose of fast_lio
 
     tf2::Transform transformTf;
-    std::string sensorFrameId = "body";
+    std::string sensorFrameId = "livox_sensor";
     auto timeStamp = cloud.header.stamp;
     Eigen::Affine3d transformationSensorToMap;
 

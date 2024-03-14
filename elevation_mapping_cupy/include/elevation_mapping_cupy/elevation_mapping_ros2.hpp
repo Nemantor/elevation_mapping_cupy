@@ -115,7 +115,8 @@ class ElevationMappingNode : public rclcpp::Node{
 
   // define the publishers construct
   std::pair<rclcpp::Publisher<grid_map_msgs::msg::GridMap>::SharedPtr, std::map<std::string, std::vector<std::string>>> publishers_;
-  // define a simple publisher
+  // define a simple service
+  rclcpp::Service<grid_map_msgs::srv::GetGridMap>::SharedPtr getSubmapService_;
 
 
   std::vector<PointCloudSyncPtr> pointCloudSyncs_;

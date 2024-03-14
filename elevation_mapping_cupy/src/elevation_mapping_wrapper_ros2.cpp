@@ -54,11 +54,15 @@ void ElevationMappingWrapper::setParameters(rclcpp::Node::SharedPtr nh) {
             float param;
             if (nh->get_parameter(name, param)) {
                 param_.attr("set_value")(name, param);
+                RCLCPP_INFO_STREAM(nh->get_logger(), "Setting parameter " << name << " to " << param);
             }
             } else if (type == "str") {
             std::string param;
             if (nh->get_parameter(name, param)) {
+                RCLCPP_INFO_STREAM(nh->get_logger(), "Setting parameter " << name << " to " << param);
+
                 param_.attr("set_value")(name, param);
+
             }
             } else if (type == "bool") {
             bool param;
