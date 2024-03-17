@@ -79,6 +79,9 @@ add_executable(elevation_mapping_node_ros2 src/elevation_mapping_node_ros2.cpp)
 target_link_libraries(elevation_mapping_node_ros2 elevation_mapping_ros2)
 ament_target_dependencies(elevation_mapping_node_ros2 "rclcpp")
 
+add_executable(submap_node src/submap_node.cpp)
+ament_target_dependencies(submap_node "rclcpp" "sensor_msgs" "elevation_map_msgs" "grid_map_msgs" "grid_map_ros" "Eigen3" "tf2" "tf2_eigen")
+
 # add_compile_options(-fvisibility=hidden)
 # target_compile_definitions(elevation_mapping_ros2 PRIVATE -fvisibility=hidden)
 
@@ -95,6 +98,12 @@ install(
   TARGETS elevation_mapping_node_ros2
   DESTINATION lib/${PROJECT_NAME}
 )
+
+install(
+  TARGETS submap_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 
 install(
   DIRECTORY launch config script

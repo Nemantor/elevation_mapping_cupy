@@ -86,7 +86,7 @@ class ElevationMappingNode : public rclcpp::Node{
 
 
   void publishAsPointCloud(const grid_map::GridMap& map) const;
-  bool getSubmap(grid_map_msgs::srv::GetGridMap::Request& request, grid_map_msgs::srv::GetGridMap::Response& response);
+  bool getSubmap(std::shared_ptr<grid_map_msgs::srv::GetGridMap::Request> request_ptr, std::shared_ptr<grid_map_msgs::srv::GetGridMap::Response> response_ptr);
   bool checkSafety(elevation_map_msgs::srv::CheckSafety::Request& request, elevation_map_msgs::srv::CheckSafety::Response& response);
   bool initializeMap(elevation_map_msgs::srv::Initialize::Request& request, elevation_map_msgs::srv::Initialize::Response& response);
   bool clearMap(std_srvs::srv::Empty::Request& request, std_srvs::srv::Empty::Response& response);
@@ -106,6 +106,8 @@ class ElevationMappingNode : public rclcpp::Node{
 
   // define the subscriber handles
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloudSub_;
+  rclcpp::SubscriptionOptions subscription_options_;
+
   // define the timer handles
   rclcpp::TimerBase::SharedPtr updatePoseTimer_;
   rclcpp::TimerBase::SharedPtr updateVarianceTimer_;

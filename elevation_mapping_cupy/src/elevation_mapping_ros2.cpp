@@ -95,10 +95,10 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
 
     //intialize the pointcloud subscriber
     pointcloudSub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-    point_cloud_topic, 10, std::bind(&ElevationMappingNode::pointcloudCallback, this, std::placeholders::_1));
+    point_cloud_topic,rclcpp::SensorDataQoS() ,std::bind(&ElevationMappingNode::pointcloudCallback, this, std::placeholders::_1));
 
     
-    publishers_ = std::make_pair(this->create_publisher<grid_map_msgs::msg::GridMap>("elevation_map_raw", 10), std::map<std::string, std::vector<std::string>>());
+    publishers_ = std::make_pair(this->create_publisher<grid_map_msgs::msg::GridMap>("elevation_map_raw", 1), std::map<std::string, std::vector<std::string>>());
     publishers_.second["layers"] = {"elevation"};
     publishers_.second["basic_layers"] = {"elevation"};
     
@@ -120,7 +120,7 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
 
     //Now we create the services can also implemented as a topic
     //Only one service for now, for getting the submap around the robot
-    
+    getSubmapService_ = this->create_service<grid_map_msgs::srv::GetGridMap>("get_submap", std::bind(&ElevationMappingNode::getSubmap, this, std::placeholders::_1, std::placeholders::_2));
 
 
     RCLCPP_INFO(this->get_logger(), "ElevationMappingNode finish initialization.");
@@ -316,7 +316,8 @@ void ElevationMappingNode::publishAsPointCloud(const grid_map::GridMap& map) con
     grid_map::GridMapRosConverter::toPointCloud(map, "elevation", msg);
     }
 
-bool ElevationMappingNode::getSubmap(grid_map_msgs::srv::GetGridMap::Request& request, grid_map_msgs::srv::GetGridMap::Response& response) {
+bool ElevationMappingNode::getSubmap(std::shared_ptr<grid_map_msgs::srv::GetGridMap::Request> request_ptr, std::shared_ptr<grid_map_msgs::srv::GetGridMap::Response> response_ptr) {
+    auto request = *request_ptr;
     std::string requestedFrameId = request.frame_id;
     Eigen::Isometry3d transformationOdomToMap;
     grid_map::Position requestedSubmapposition(request.position_x, request.position_y);
@@ -326,7 +327,7 @@ bool ElevationMappingNode::getSubmap(grid_map_msgs::srv::GetGridMap::Request& re
         geometry_msgs::msg::TransformStamped transformStamped;
         const auto& timestamp = this->now();
         try {
-            transformStamped = tfBuffer_->lookupTransform(requestedFrameId, mapFrameId_, timestamp);
+            transformStamped = tfBuffer_->lookupTransform(requestedFrameId, mapFrameId_, tf2::TimePointZero);
             auto temp = tf2::transformToEigen(transformStamped);
             transformationOdomToMap = temp.affine(); 
 
@@ -353,12 +354,13 @@ bool ElevationMappingNode::getSubmap(grid_map_msgs::srv::GetGridMap::Request& re
     }
     const auto& length = submap.getLength();
     if(requestedFrameId != mapFrameId_) {
+       RCLCPP_INFO_STREAM(this->get_logger(), "Transforming submap to frame " << requestedFrameId << ".");
        submap = submap.getTransformedMap(transformationOdomToMap, "elevation",requestedFrameId);
     }
     if (request.layers.empty()) {
         //it uses a newfangled allacator have to look closely for now not working
         auto created_msg = grid_map::GridMapRosConverter::toMessage(submap);
-        response.map = *created_msg;
+        response_ptr->map = *created_msg;
     } else {
         RCLCPP_INFO_STREAM(this->get_logger(), "NOT IMPLEMETED YOU ARE FUCKED Requested layers: ");
         return false;
