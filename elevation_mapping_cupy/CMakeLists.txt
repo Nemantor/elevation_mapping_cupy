@@ -5,7 +5,6 @@ project(elevation_mapping_cupy)
 # compile options for pybind11
 
 
-
 find_package(ament_cmake REQUIRED)
 find_package(PythonInterp 3 REQUIRED)
 find_package(PythonLibs 3 REQUIRED)
