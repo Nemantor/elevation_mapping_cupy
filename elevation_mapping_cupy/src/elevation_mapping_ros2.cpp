@@ -21,21 +21,21 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
 
     //declare parameters
     declare_parameter("point_cloud_topic", "livox/pcl");
-    declare_parameter("initialize_frame_id", "base");
+    declare_parameter("initialize_frame_id", "base_link");
     declare_parameter("pose_topic", "pose");
-    declare_parameter("map_frame", "camera_init");
-    declare_parameter("base_frame", "livox_sensor");
+    declare_parameter("map_frame", "World");
+    declare_parameter("base_frame", "base_link");
     declare_parameter("initialize_method", "linear");
     declare_parameter("position_lowpass_alpha", 0.2);
     declare_parameter("orientation_lowpass_alpha", 0.2);
     declare_parameter("update_variance_fps", 10.0);
     declare_parameter("time_interval", 0.02);
     declare_parameter("update_pose_fps", 50.0);
-    declare_parameter("initialize_tf_grid_size", 0.5);
+    declare_parameter("initialize_tf_grid_size", 10.0);
     declare_parameter("map_acquire_fps", 10.0);
     declare_parameter("enable_point_cloud_publishing", false);
     declare_parameter("enable_drift_corrected_tf_publishing", false);
-    declare_parameter("use_initializer_at_start", false);
+    declare_parameter("use_initializer_at_start", true);
 
 
     RCLCPP_INFO(this->get_logger(), "ElevationMappingNode started.");
@@ -88,6 +88,9 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
     nh->declare_parameter("weight_file", "/home/eongan/focus/cupy_ws/src/elevation_mapping_cupy/elevation_mapping_cupy/config/core/weights.dat");
     nh->declare_parameter("max_height_range", static_cast<float>(1.0));
     nh->declare_parameter("time_interval", static_cast<float>(0.02));
+    nh->declare_parameter("resolution", static_cast<float>(0.2));
+    nh->declare_parameter("map_legth", static_cast<float>(5.0));
+    nh->declare_parameter("sensor_noise_factor", static_cast<float>(0.01));
     timeInterval = nh->get_parameter("time_interval").as_double();
 
     map_.initialize(nh);
@@ -197,7 +200,7 @@ void ElevationMappingNode::inputPointCloud(const sensor_msgs::msg::PointCloud2& 
     // the frame of the map will be referenced to the initualisation pose of fast_lio
 
     tf2::Transform transformTf;
-    std::string sensorFrameId = "livox_sensor";
+    std::string sensorFrameId = "sensor_frame";
     auto timeStamp = cloud.header.stamp;
     Eigen::Affine3d transformationSensorToMap;
 
@@ -223,8 +226,8 @@ void ElevationMappingNode::inputPointCloud(const sensor_msgs::msg::PointCloud2& 
     map_.input(points, channels, transformationSensorToMap.rotation(), transformationSensorToMap.translation(),
                 positionError, orientationError);
 
-    RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(), *this->get_clock(), 100, "Input pointcloud took " << (this->now() - start).seconds() << " seconds.");
-    RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(), *this->get_clock(), 100, "positionError: " << positionError << " orientationError: " << orientationError);
+    // RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(), *this->get_clock(), 100, "Input pointcloud took " << (this->now() - start).seconds() << " seconds.");
+    // RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(), *this->get_clock(), 100, "positionError: " << positionError << " orientationError: " << orientationError);
                                                 
 }
 
@@ -297,7 +300,7 @@ void ElevationMappingNode::initializeWithTF() {
         points.push_back(p);
         i++;
     }
-    if(!points.empty() && points.size() < 3) {
+    if(points.size() < 3) {
         points.emplace_back(p + Eigen::Vector3d(initializeTfGridSize_, initializeTfGridSize_, 0));
         points.emplace_back(p + Eigen::Vector3d(-initializeTfGridSize_, initializeTfGridSize_, 0));
         points.emplace_back(p + Eigen::Vector3d(initializeTfGridSize_, -initializeTfGridSize_, 0));
@@ -377,7 +380,7 @@ void ElevationMappingNode::updateGridMap() {
     if (enablePointCloudPublishing_) {
         publishAsPointCloud(gridMap_);
     }
-    RCLCPP_INFO_STREAM(this->get_logger(), "Grifmap updated hopefully");
+    // RCLCPP_INFO_STREAM(this->get_logger(), "Grifmap updated hopefully");
     isGridmapUpdated_ = true;
 }
 
@@ -430,13 +433,13 @@ bool ElevationMappingNode::initializeMap(elevation_map_msgs::srv::Initialize::Re
 
 void ElevationMappingNode::updateVariance() {
     map_.update_variance();
-    RCLCPP_INFO_STREAM(this->get_logger(), "Variance updated.");
+    // RCLCPP_INFO_STREAM(this->get_logger(), "Variance updated.");
 
 }
 
 void ElevationMappingNode::updateTime() {
     map_.update_time();
-    RCLCPP_INFO_STREAM(this->get_logger(), "Time updated.");
+    // RCLCPP_INFO_STREAM(this->get_logger(), "Time updated.");
 }
 
 }  // namespace elevation_mapping_cupy
