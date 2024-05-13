@@ -36,6 +36,7 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
     declare_parameter("enable_point_cloud_publishing", false);
     declare_parameter("enable_drift_corrected_tf_publishing", false);
     declare_parameter("use_initializer_at_start", true);
+    // declare_parameter("initialize_frame_id",def_init_tf );
 
 
     RCLCPP_INFO(this->get_logger(), "ElevationMappingNode started.");
@@ -78,6 +79,7 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
     enableDriftCorrectedTFPublishing_ = this->get_parameter("enable_drift_corrected_tf_publishing").as_bool();
     useInitializerAtStart_ = this->get_parameter("use_initializer_at_start").as_bool();
     point_cloud_topic = this->get_parameter("point_cloud_topic").as_string();
+    // initialize_frame_id_ = this->get_parameter("initialize_frame_id").as_string_array();
 
 
 
@@ -287,7 +289,7 @@ void ElevationMappingNode::initializeWithTF() {
         Eigen::Affine3d transformationBaseToMap;
         geometry_msgs::msg::TransformStamped transformStamped;
         try {
-            transformStamped = tfBuffer_->lookupTransform(mapFrameId_, frame_id, timestamp);
+            transformStamped = tfBuffer_->lookupTransform(mapFrameId_, frame_id, tf2::TimePointZero);
             auto temp = tf2::transformToEigen(transformStamped);
             transformationBaseToMap = temp.affine();               
         } catch (tf2::TransformException &ex) {
@@ -296,15 +298,16 @@ void ElevationMappingNode::initializeWithTF() {
             return;
         }
         p = transformationBaseToMap.translation();
-        p.z() += initialize_tf_offset_[i];
+        RCLCPP_INFO_STREAM(this->get_logger(), "wheel_point" << p);
+        p.z() += -0.15;
         points.push_back(p);
         i++;
     }
     if(points.size() < 3) {
-        points.emplace_back(p + Eigen::Vector3d(initializeTfGridSize_, initializeTfGridSize_, 0));
-        points.emplace_back(p + Eigen::Vector3d(-initializeTfGridSize_, initializeTfGridSize_, 0));
-        points.emplace_back(p + Eigen::Vector3d(initializeTfGridSize_, -initializeTfGridSize_, 0));
-        points.emplace_back(p + Eigen::Vector3d(-initializeTfGridSize_, -initializeTfGridSize_, 0));
+        points.emplace_back(p + Eigen::Vector3d(initializeTfGridSize_, initializeTfGridSize_, -0.66));
+        points.emplace_back(p + Eigen::Vector3d(-initializeTfGridSize_, initializeTfGridSize_, -0.66));
+        points.emplace_back(p + Eigen::Vector3d(initializeTfGridSize_, -initializeTfGridSize_, -0.66));
+        points.emplace_back(p + Eigen::Vector3d(-initializeTfGridSize_, -initializeTfGridSize_, -0.66));
     }
     RCLCPP_INFO_STREAM(this->get_logger(), "Intializing with points using" << initializeMethod_);
     map_.initializeWithPoints(points, initializeMethod_);
@@ -395,7 +398,7 @@ bool ElevationMappingNode::initializeMap(elevation_map_msgs::srv::Initialize::Re
                 geometry_msgs::msg::TransformStamped transformStamped;
                 Eigen::Affine3d transformationBaseToMap;
                 try {
-                    transformStamped = tfBuffer_->lookupTransform(mapFrameId_, pointFrameId, timeStamp);
+                    transformStamped = tfBuffer_->lookupTransform(mapFrameId_, pointFrameId, tf2::TimePointZero);
                     auto temp = tf2::transformToEigen(transformStamped);
                     transformationBaseToMap = temp.affine(); 
                 

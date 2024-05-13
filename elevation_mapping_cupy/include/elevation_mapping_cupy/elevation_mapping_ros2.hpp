@@ -140,7 +140,7 @@ class ElevationMappingNode : public rclcpp::Node{
   std::set<double> map_fps_unique_;
   std::map<std::string, std::vector<std::string>> channels_;
 
-  std::vector<std::string> initialize_frame_id_;
+  std::vector<std::string> initialize_frame_id_ = {"wheel_1", "wheel_2", "wheel_3", "wheel_4"};
   std::vector<double> initialize_tf_offset_;
   std::string initializeMethod_;
 
