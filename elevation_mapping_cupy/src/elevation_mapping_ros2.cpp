@@ -36,6 +36,7 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
     declare_parameter("enable_point_cloud_publishing", false);
     declare_parameter("enable_drift_corrected_tf_publishing", false);
     declare_parameter("use_initializer_at_start", true);
+    declare_parameter("enable_visibility_cleanup", false);
     // declare_parameter("initialize_frame_id",def_init_tf );
 
 
@@ -79,6 +80,7 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
     enableDriftCorrectedTFPublishing_ = this->get_parameter("enable_drift_corrected_tf_publishing").as_bool();
     useInitializerAtStart_ = this->get_parameter("use_initializer_at_start").as_bool();
     point_cloud_topic = this->get_parameter("point_cloud_topic").as_string();
+    this->get_parameter("enable_visibility_cleanup").as_bool();
     // initialize_frame_id_ = this->get_parameter("initialize_frame_id").as_string_array();
 
 
@@ -93,6 +95,7 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
     nh->declare_parameter("resolution", static_cast<float>(0.2));
     nh->declare_parameter("map_legth", static_cast<float>(5.0));
     nh->declare_parameter("sensor_noise_factor", static_cast<float>(0.01));
+    nh->declare_parameter("enable_visibility_cleanup", static_cast<bool>(false));
     timeInterval = nh->get_parameter("time_interval").as_double();
 
     map_.initialize(nh);

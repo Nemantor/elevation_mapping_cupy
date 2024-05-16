@@ -19,8 +19,8 @@ smooth_filter:
     input_layer_name: "min_filter"
 # Apply inpainting using opencv
 inpainting:
-  enable: False
-  fill_nan: False
+  enable: true
+  fill_nan: true
   is_height_layer: True
   layer_name: "inpaint"
   extra_params:
