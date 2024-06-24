@@ -167,13 +167,26 @@ void ElevationMappingNode::publishMapOfIndex() {
         msg.header.frame_id = mapFrameId_;
         grid_map::GridMapRosConverter::toPointCloud(gridMap_, "elevation", msg_pc);
         msg_pc.header.frame_id = mapFrameId_;
+        //  create a pointcloud message
+        sensor_msgs::msg::PointCloud2 reduced_pc;
+        
+        // reduce the number of points published
+        for (auto& point : msg_pc.data) {
+            // accept only one in 10 points
+            if (rand() % 10 == 0) {
+                reduced_pc.data.push_back(point);
+            }
+
+        }
+        reduced_pc.header.frame_id = mapFrameId_;
+        reduced_pc.header.stamp = this->now();
     }
     msg.basic_layers = map_basic_layers_[index];
     publishers_.first->publish(msg);
     if( display_pub_count > 20){
         display_pub_count = 0;
         RCLCPP_INFO_STREAM(this->get_logger(), "[elevatiob map]Publishing pointcloud");
-        pointCloudPub_->publish(msg_pc);
+        pointCloudPub_->publish(reduced_pc);
     } else {
         display_pub_count++;
     
