@@ -105,7 +105,7 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
     pointcloudSub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
     point_cloud_topic,rclcpp::SensorDataQoS() ,std::bind(&ElevationMappingNode::pointcloudCallback, this, std::placeholders::_1));
 
-    
+    pointCloudPub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("elevation_map_pointcloud", 1);
     publishers_ = std::make_pair(this->create_publisher<grid_map_msgs::msg::GridMap>("elevation_map_raw", 1), std::map<std::string, std::vector<std::string>>());
     publishers_.second["layers"] = {"elevation"};
     publishers_.second["basic_layers"] = {"elevation"};
@@ -142,6 +142,8 @@ void ElevationMappingNode::publishMapOfIndex() {
         return;
     }
     grid_map_msgs::msg::GridMap msg;
+    // pointcloud2 msg;
+    sensor_msgs::msg::PointCloud2 msg_pc;
     std::vector<std::string> layers;
     {
         std::lock_guard<std::mutex> lock(mapMutex_);
@@ -161,11 +163,21 @@ void ElevationMappingNode::publishMapOfIndex() {
             RCLCPP_INFO_STREAM(this->get_logger(), "No layers to publish.");
             return;
         }
-        msg = *grid_map::GridMapRosConverter::toMessage(gridMap_, layers);
+        msg = * grid_map::GridMapRosConverter::toMessage(gridMap_, layers);
         msg.header.frame_id = mapFrameId_;
+        grid_map::GridMapRosConverter::toPointCloud(gridMap_, "elevation", msg_pc);
+        msg_pc.header.frame_id = mapFrameId_;
     }
     msg.basic_layers = map_basic_layers_[index];
     publishers_.first->publish(msg);
+    if( display_pub_count > 20){
+        display_pub_count = 0;
+        RCLCPP_INFO_STREAM(this->get_logger(), "[elevatiob map]Publishing pointcloud");
+        pointCloudPub_->publish(msg_pc);
+    } else {
+        display_pub_count++;
+    
+    }
 }
 
 

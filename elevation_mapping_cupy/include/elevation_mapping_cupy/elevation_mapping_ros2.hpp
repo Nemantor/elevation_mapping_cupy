@@ -120,6 +120,9 @@ class ElevationMappingNode : public rclcpp::Node{
   // define a simple service
   rclcpp::Service<grid_map_msgs::srv::GetGridMap>::SharedPtr getSubmapService_;
 
+// create a pointclod2 publisher
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pointCloudPub_;
+  int display_pub_count = 0;
 
   std::vector<PointCloudSyncPtr> pointCloudSyncs_;
   std::vector<rclcpp::Publisher<grid_map_msgs::msg::GridMap>> mapPubs_;
