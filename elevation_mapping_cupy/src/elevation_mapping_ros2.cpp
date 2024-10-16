@@ -100,6 +100,8 @@ ElevationMappingNode::ElevationMappingNode() : Node("elevation_mapping_node") {
 
     map_.initialize(nh);
 
+    RCLCPP_INFO(this->get_logger(), "ElevationMappingNode subscribing to pose topic: %s", pose_topic.c_str());
+    RCLCPP_INFO(this->get_logger(), "ElevationMappingNode subscribing to point cloud topic: %s", point_cloud_topic.c_str());
 
     //intialize the pointcloud subscriber
     pointcloudSub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
@@ -183,14 +185,6 @@ void ElevationMappingNode::publishMapOfIndex() {
     }
     msg.basic_layers = map_basic_layers_[index];
     publishers_.first->publish(msg);
-    if( display_pub_count > 20){
-        display_pub_count = 0;
-        RCLCPP_INFO_STREAM(this->get_logger(), "[elevatiob map]Publishing pointcloud");
-        pointCloudPub_->publish(reduced_pc);
-    } else {
-        display_pub_count++;
-    
-    }
 }
 
 
@@ -230,7 +224,7 @@ void ElevationMappingNode::inputPointCloud(const sensor_msgs::msg::PointCloud2& 
     // the frame of the map will be referenced to the initualisation pose of fast_lio
 
     tf2::Transform transformTf;
-    std::string sensorFrameId = "sensor_frame";
+    std::string sensorFrameId = cloud.header.frame_id;
     auto timeStamp = cloud.header.stamp;
     Eigen::Affine3d transformationSensorToMap;
 
